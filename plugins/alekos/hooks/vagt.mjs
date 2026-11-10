@@ -15,6 +15,7 @@
 // ÆRLIGT: for Bash er vagten et mønster-tjek og kan omgås (relative stier efter cd, globs, find -exec, base64/eval,
 // python -c/node -e, variabler som ${s}rity, citationstegn midt i ord, symlinks). Det reelle værn for Bash er
 // sandkassen; for Read/Grep/Glob/Edit/Write er det deny-reglerne. Vagten er et ekstra lag og en tidlig, tydelig besked.
+import { spawn } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -36,31 +37,31 @@ for (const m of [...BESKYTTET]) { try { BESKYTTET.push(fs.realpathSync(m)); } ca
 if (fs.existsSync(path.join(MARKED, ".claude-plugin", "marketplace.json"))) BESKYTTET.push(MARKED);
 
 const STIER = [
-  [/library\/(application support|containers|group containers|cookies|safari|webkit|httpstorages|keychains)(\/|$)/i, "app-/browserdata eller nøglering i ~/Library"],
-  [/(^|\/)\.mozilla(\/|$)/i, "Firefox"],
-  [/(^|\/)\.ssh(\/|$)/i, "~/.ssh"],
-  [/(^|\/)hemmeligt(\/|$)/i, "~/Hemmeligt"],
-  [/(^|\/)\.(config|docker)(\/|$)/i, "nøgler/login i ~/.config eller ~/.docker"],
-  [/(^|\/)\.(zsh_history|bash_history|zhistory|npmrc|pypirc|git-credentials)(?=$|[\s"'|;&)<>])/im, "historik/nøglefil i hjemmemappen"],
-  [/(^|\/)\.(supabase|aws)(\/|$)/i, "nøgler i ~/.supabase/~/.aws"],
-  [/(^|\/)\.netrc(?=$|[\s"'|;&)<>])/im, "~/.netrc"],
-  [/(^|[\/\s"'=])\.env(rc|\.(?!example\b|sample\b|template\b)[\w.-]+)?($|[\s"'\/;|&)])/i, ".env-fil"],
+  [/library\/(application support|containers|group containers|cookies|safari|webkit|httpstorages|keychains)(\/|$)/i, "app-/browserdata eller nøglering i ~/Library", "noegle_data"],
+  [/(^|\/)\.mozilla(\/|$)/i, "Firefox", "noegle_data"],
+  [/(^|\/)\.ssh(\/|$)/i, "~/.ssh", "noegle_data"],
+  [/(^|\/)hemmeligt(\/|$)/i, "~/Hemmeligt", "noegle_data"],
+  [/(^|\/)\.(config|docker)(\/|$)/i, "nøgler/login i ~/.config eller ~/.docker", "noegle_data"],
+  [/(^|\/)\.(zsh_history|bash_history|zhistory|npmrc|pypirc|git-credentials)(?=$|[\s"'|;&)<>])/im, "historik/nøglefil i hjemmemappen", "noegle_data"],
+  [/(^|\/)\.(supabase|aws)(\/|$)/i, "nøgler i ~/.supabase/~/.aws", "noegle_data"],
+  [/(^|\/)\.netrc(?=$|[\s"'|;&)<>])/im, "~/.netrc", "noegle_data"],
+  [/(^|[\/\s"'=])\.env(rc|\.(?!example\b|sample\b|template\b)[\w.-]+)?($|[\s"'\/;|&)])/i, ".env-fil", "noegle_data"],
 ];
 
 const BASH = [
   // 0.7.0: open må åbne filer og programmer (PDF, Excel, Preview …), men aldrig køre scripts eller åbne en terminal —
   // det kører uden for sandkassen (kontrolfund 23.10.2026). osascript kan styre alle programmer og forbliver spærret.
-  [/osascript|osacompile/i, "osascript (kan styre alle programmer uden sandkasse)"],
-  [/\bosa\w*\$|\$\{?\w*\}?script\b|\$\{?\w*\}?compile\b/i, "sammensat osascript-kommando"],
-  [/\bopen\b[^\n|;&]*(\.(command|sh|zsh|bash|tool|app|terminal|scpt|applescript|workflow|pkg|dmg|py|js|rb|pl)\b|-a\s+["']?(terminal|iterm|script editor|automator))/i, "open af et script, en app-pakke eller en terminal"],
-  [/\bsecurity\b[^\n|;&]*(find-|add-|delete-|set-|dump-keychain|export|import|unlock-keychain|create-keychain|list-keychains|default-keychain|login-keychain|\s-i\b)/i, "nøgleringen (security)"],
-  [/supabase\.(co|in|com)\b/i, "direkte kald til Supabase"],
-  [/\b(headers|login|faelles)\.mjs\b/i, "Alekos' login-/nøglescripts"],
-  [/alekos-claude-plugin/i, "Alekos-pluginets mappe"],
-  [/local storage|leveldb|indexeddb|cookies\.binarycookies|login data|web data/i, "browserens lagrede data"],
-  [/(^|[\s"'=\/])\.claude(\.json)?(\/|\s|"|'|$)/im, "Claude Codes indstillinger"],
-  [/(^|[\s"'=\/])\.mcp\.json\b/i, "MCP-opsætning (.mcp.json)"],
-  [/\.git\/hooks|\.husky\b|\.vscode\/(tasks|settings|launch)\.json|\.code-workspace\b/i, "git-hooks/VS Code-opsætning (kode der kører uden sandkasse)"],
+  [/osascript|osacompile/i, "osascript (kan styre alle programmer uden sandkasse)", "kode_uden_sandkasse"],
+  [/\bosa\w*\$|\$\{?\w*\}?script\b|\$\{?\w*\}?compile\b/i, "sammensat osascript-kommando", "kode_uden_sandkasse"],
+  [/\bopen\b[^\n|;&]*(\.(command|sh|zsh|bash|tool|app|terminal|scpt|applescript|workflow|pkg|dmg|py|js|rb|pl)\b|-a\s+["']?(terminal|iterm|script editor|automator))/i, "open af et script, en app-pakke eller en terminal", "kode_uden_sandkasse"],
+  [/\bsecurity\b[^\n|;&]*(find-|add-|delete-|set-|dump-keychain|export|import|unlock-keychain|create-keychain|list-keychains|default-keychain|login-keychain|\s-i\b)/i, "nøgleringen (security)", "noegle_data"],
+  [/supabase\.(co|in|com)\b/i, "direkte kald til Supabase", "supabase"],
+  [/\b(headers|login|faelles)\.mjs\b/i, "Alekos' login-/nøglescripts", "noegle_data"],
+  [/alekos-claude-plugin/i, "Alekos-pluginets mappe", "indstillinger"],
+  [/local storage|leveldb|indexeddb|cookies\.binarycookies|login data|web data/i, "browserens lagrede data", "noegle_data"],
+  [/(^|[\s"'=\/])\.claude(\.json)?(\/|\s|"|'|$)/im, "Claude Codes indstillinger", "indstillinger"],
+  [/(^|[\s"'=\/])\.mcp\.json\b/i, "MCP-opsætning (.mcp.json)", "indstillinger"],
+  [/\.git\/hooks|\.husky\b|\.vscode\/(tasks|settings|launch)\.json|\.code-workspace\b/i, "git-hooks/VS Code-opsætning (kode der kører uden sandkasse)", "kode_uden_sandkasse"],
 ];
 
 const SKRIVE_VAERKTOEJER = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
@@ -298,7 +299,7 @@ function tjekServerSider(vaerter, ekstra, adresse) {
     if (e.kun_adresse && !adresse) continue;
     for (const raa of vaerter) {
       const v = raa.toLowerCase().replace(/\.+$/, "");
-      if ((v === e.domaene || v.endsWith(`.${e.domaene}`)) && !(e.undtagen ?? []).includes(v)) bloker(`${e.hvad} i browseren (spærret af Alekos)`);
+      if ((v === e.domaene || v.endsWith(`.${e.domaene}`)) && !(e.undtagen ?? []).includes(v)) bloker(`${e.hvad} i browseren (spærret af Alekos)`, "chrome_server_side");
     }
   }
 }
@@ -310,9 +311,9 @@ function tjekChromeUrl(url, ekstra = [], adminSider = []) {
   const u = String(url).trim();
   if (/^(back|forward)$/i.test(u)) return;
   const m = u.match(CHROME_PROTOKOL);
-  if (m && !/^https?$/i.test(m[1])) bloker(`adressen "${m[1]}:" i browseren (kun almindelige websider)`);
+  if (m && !/^https?$/i.test(m[1])) bloker(`adressen "${m[1]}:" i browseren (kun almindelige websider)`, "chrome_protokol");
   let vaert = "";
-  try { vaert = new URL(m ? u : `https://${u}`).hostname.toLowerCase().replace(/\.+$/, ""); } catch { bloker("ugyldig adresse i browseren"); }
+  try { vaert = new URL(m ? u : `https://${u}`).hostname.toLowerCase().replace(/\.+$/, ""); } catch { bloker("ugyldig adresse i browseren", "chrome_ugyldig_adresse"); }
   const sider = /(^|\.)(supabase\.(co|com|in)|lovable\.(dev|app)|lovableproject\.com)$/;
   // 0.7.0: Mit Alekos, VF, Media og de andre alekos.dk-sider er åbne — medarbejderne bruger dem selv i dag. Admin følger
   // kontakten i Claude-adgang (0.6.1: "*" = hele Admin, standard Til) og er aldrig åben på /claude-forbind og /claude-adgang;
@@ -321,25 +322,25 @@ function tjekChromeUrl(url, ekstra = [], adminSider = []) {
   if (vaert === "admin.alekos.dk") {
     bloker(adminSider.length
       ? "denne adresse i Admin er ikke tilladt for Claude (prøv https://admin.alekos.dk/<side> uden omveje)"
-      : "denne side i Admin er ikke slået til for dig (Admin → Claude-adgang)");
+      : "denne side i Admin er ikke slået til for dig (Admin → Claude-adgang)", adminSider.length ? "chrome_admin_adresse" : "chrome_admin_fra");
   }
   if (sider.test(vaert)) {
-    bloker(`${vaert} i browseren (brug Alekos-MCP'en til Admin)`);
+    bloker(`${vaert} i browseren (brug Alekos-MCP'en til Admin)`, "chrome_supabase_lovable");
   }
   tjekServerSider([vaert], ekstra, true);
 }
 
 function tjekChrome(navn, input, ekstra = [], sider = []) {
-  if (typeof navn !== "string") bloker("Chrome-kald uden navn");
+  if (typeof navn !== "string") bloker("Chrome-kald uden navn", "ugyldigt_kald");
   navn = navn.trim().toLowerCase().replace(/^mcp__claude-in-chrome__/, "");
-  if (!CHROME_KENDTE.has(navn)) bloker(`ukendt Chrome-værktøj "${navn}"`);
-  if (!input || typeof input !== "object" || Array.isArray(input)) bloker("Chrome-kald uden input");
-  if (CHROME_SPAERRET.has(navn)) bloker(`Chrome-værktøjet ${navn}`);
+  if (!CHROME_KENDTE.has(navn)) bloker(`ukendt Chrome-værktøj "${navn}"`, "chrome_ukendt_vaerktoej");
+  if (!input || typeof input !== "object" || Array.isArray(input)) bloker("Chrome-kald uden input", "ugyldigt_kald");
+  if (CHROME_SPAERRET.has(navn)) bloker(`Chrome-værktøjet ${navn}`, "chrome_spaerret_vaerktoej");
   if (navn === "browser_batch") {
-    if (!Array.isArray(input.actions)) bloker("Chrome-batch uden handlinger");
+    if (!Array.isArray(input.actions)) bloker("Chrome-batch uden handlinger", "ugyldigt_kald");
     for (const a of input.actions) {
-      if (!a || typeof a !== "object") bloker("Chrome-batch med ukendt handling");
-      if (String(a.name ?? "").trim().toLowerCase().replace(/^mcp__claude-in-chrome__/, "") === "browser_batch") bloker("Chrome-batch i batch");
+      if (!a || typeof a !== "object") bloker("Chrome-batch med ukendt handling", "ugyldigt_kald");
+      if (String(a.name ?? "").trim().toLowerCase().replace(/^mcp__claude-in-chrome__/, "") === "browser_batch") bloker("Chrome-batch i batch", "ugyldigt_kald");
       tjekChrome(a.name, a.input, ekstra, sider);
     }
     return;
@@ -347,16 +348,16 @@ function tjekChrome(navn, input, ekstra = [], sider = []) {
   // En tilladt Admin-side (0.6.0) må stå i url-feltet på navigate/ny fane — men ingen andre steder.
   const adminOk = (navn === "navigate" || navn === "tabs_create_mcp") && tilladtAdminSide(input.url, sider);
   const alt = chromeTekst(JSON.stringify(adminOk ? { ...input, url: "" } : input));
-  for (const [re, hvad] of CHROME_SIDER) if (re.test(alt)) bloker(`${hvad} i browseren (brug Alekos-MCP'en til Admin)`);
+  for (const [re, hvad] of CHROME_SIDER) if (re.test(alt)) bloker(`${hvad} i browseren (brug Alekos-MCP'en til Admin)`, `chrome:${hvad}`);
   if (ekstra.length && alt.length <= MAKS_CHROME_TEKST) tjekServerSider(alt.match(VAERTER_I_TEKST) ?? [], ekstra, false);
   if (typeof input.url === "string" && !adminOk) tjekChromeUrl(chromeTekst(input.url), ekstra, sider);
-  if ("paths" in input && !Array.isArray(input.paths)) bloker("filupload uden liste over filer");
+  if ("paths" in input && !Array.isArray(input.paths)) bloker("filupload uden liste over filer", "ugyldigt_kald");
   for (const p of Array.isArray(input.paths) ? input.paths : []) {
-    if (typeof p !== "string") bloker("filupload med ugyldig sti");
+    if (typeof p !== "string") bloker("filupload med ugyldig sti", "ugyldigt_kald");
     for (const s of [normaliser(p), ...filstier(p, cwd)]) {
-      for (const [re, hvad] of STIER) if (re.test(s)) bloker(hvad);
+      for (const [re, hvad] of STIER) if (re.test(s)) bloker(hvad, hvad);
       if (s.split(path.sep).includes(".claude") || /(^|\/)\.claude\.json$/.test(s) || BESKYTTET.some((rod) => under(s, rod))) {
-        bloker("upload af Claude Codes indstillinger eller Alekos-pluginet");
+        bloker("upload af Claude Codes indstillinger eller Alekos-pluginet", "upload_indstillinger");
       }
     }
   }
@@ -389,21 +390,21 @@ function tjekFrontmatter(tekst) {
   const t = String(tekst).replace(/^﻿/, "").replace(/\r\n?/g, "\n");
   const m = t.match(/^\s*---[^\S\n]*\n([\s\S]*?)(\n---|$)/);
   if (!m) return;
-  const farlig = () => bloker("indstillinger i en skill/agent/kommando, der kan køre kode uden sandkasse eller gemme uden dit ja");
+  const farlig = () => bloker("indstillinger i en skill/agent/kommando, der kan køre kode uden sandkasse eller gemme uden dit ja", "skill_indstillinger");
   let noegle = "";
   for (const linje of m[1].split("\n")) {
     // Nøgle på linjen (også i anførselstegn, i lister og med ?-syntaks).
     const k = linje.match(/^[ \t]*(?:-[ \t]*)?\??[ \t]*["']?([^"':#\s][^"':#]*?)["']?[ \t]*:(?=\s|$)/);
     if (k && !/^[ \t]/.test(linje)) noegle = k[1].trim();
     if (k && /^(hooks?|mcp[\s_-]*servers?|permission[\s_-]*mode)$/i.test(k[1].trim())) farlig();
-    if (/^[ \t]*\?/.test(linje)) bloker("YAML-nøgle med ?-syntaks i en skill/agent/kommando");
-    if (/^[ \t]*[{[]/.test(linje)) bloker("skjult YAML i en skill/agent/kommando (flow-form)");
-    if (/^[ \t]*(?:-[ \t]*)?["'][^"'\n]*\\/.test(linje)) bloker("escape-tegn i en nøgle i en skill/agent/kommando");
-    if (/^[ \t]*<<[ \t]*:/.test(linje)) bloker("YAML-fletning (<<) i en skill/agent/kommando");
+    if (/^[ \t]*\?/.test(linje)) bloker("YAML-nøgle med ?-syntaks i en skill/agent/kommando", "skill_skjult");
+    if (/^[ \t]*[{[]/.test(linje)) bloker("skjult YAML i en skill/agent/kommando (flow-form)", "skill_skjult");
+    if (/^[ \t]*(?:-[ \t]*)?["'][^"'\n]*\\/.test(linje)) bloker("escape-tegn i en nøgle i en skill/agent/kommando", "skill_skjult");
+    if (/^[ \t]*<<[ \t]*:/.test(linje)) bloker("YAML-fletning (<<) i en skill/agent/kommando", "skill_skjult");
     // Skjult YAML: flow-objekt, anker eller tag dér, hvor en værdi starter (efter "nøgle:" eller "- ").
     const vaerdi = k ? linje.slice(k[0].length) : (linje.match(/^[ \t]*-[ \t]+(.*)$/)?.[1] ?? null);
-    if (vaerdi !== null && /^[ \t]*(\{|&[A-Za-z0-9_-]|!)/.test(vaerdi)) bloker("skjult YAML i en skill/agent/kommando (flow-objekt, anker eller tag)");
-    if (/^[ \t]*"[^"\n]*\\[xuUN0-9]/.test(vaerdi ?? "")) bloker("escape-tegn i en skill/agent/kommando");
+    if (vaerdi !== null && /^[ \t]*(\{|&[A-Za-z0-9_-]|!)/.test(vaerdi)) bloker("skjult YAML i en skill/agent/kommando (flow-objekt, anker eller tag)", "skill_skjult");
+    if (/^[ \t]*"[^"\n]*\\[xuUN0-9]/.test(vaerdi ?? "")) bloker("escape-tegn i en skill/agent/kommando", "skill_skjult");
     if (/bypass[\s_-]*permissions/i.test(vaerdi ?? "") && /permission/i.test(noegle)) farlig();
     // Alekos' gem-værktøj må aldrig stå i værktøjslister (heller ikke via * eller kun servernavnet).
     // 0.8.0: også del_opskrift og ret_fagviden (spørger altid i boks) og under ethvert servernavn.
@@ -411,11 +412,64 @@ function tjekFrontmatter(tekst) {
   }
 }
 
-function bloker(grund) {
+// 0.8.2 (Caspers beslutning 10.11.2026): hvert stop meldes til Alekos-serveren (alekos/vagt_stop), så Casper kan se,
+// hvis Claude bliver stoppet. Meldingen er KUN en fast etiket herfra + kategori + værktøjsnavn + udgave — aldrig grunden
+// (den kan indeholde værtsnavn, adresse, servernavn eller kommando) og aldrig samtaletekst. Nøglen er en fast nøgle fra
+// koden; ukendt nøgle = "Stoppet af vagten" (andet). Serveren afgør selv, om noget gemmes.
+const ETIKETTER = new Map([
+  ...[...STIER, ...BASH].map(([, navn, kat]) => [navn, [navn, kat]]),
+  ...CHROME_SIDER.map(([, hvad]) => [`chrome:${hvad}`, [`${hvad} i browseren`, "browser"]]),
+  ["chrome_server_side", ["Spærret side i browseren", "browser"]],
+  ["chrome_protokol", ["Adresse, der ikke er en almindelig webside, i browseren", "browser"]],
+  ["chrome_ugyldig_adresse", ["Ugyldig adresse i browseren", "browser"]],
+  ["chrome_admin_adresse", ["Admin-adresse, der ikke er tilladt for Claude", "browser"]],
+  ["chrome_admin_fra", ["Admin i browseren er ikke slået til", "browser"]],
+  ["chrome_supabase_lovable", ["Supabase/Lovable i browseren", "browser"]],
+  ["chrome_ukendt_vaerktoej", ["Ukendt Chrome-værktøj", "browser"]],
+  ["chrome_spaerret_vaerktoej", ["Spærret Chrome-værktøj", "browser"]],
+  ["upload_indstillinger", ["Upload af Claude Codes indstillinger eller Alekos-pluginet", "indstillinger"]],
+  ["skill_indstillinger", ["Farlige indstillinger i en skill/agent/kommando", "indstillinger"]],
+  ["skill_skjult", ["Skjult YAML i en skill/agent/kommando", "indstillinger"]],
+  ["editor_kode", ["Kørsel af kode/terminal via editoren", "kode_uden_sandkasse"]],
+  ["forbindelse_ukendt_navn", ["Forbindelse med ukendt navn", "forbindelse"]],
+  ["forbindelse_falsk_alekos", ["Forbindelse, der udgiver sig for at være Alekos' egen", "forbindelse"]],
+  ["forbindelse_altid_spaerret", ["Forbindelse, der styrer filer, browser, terminal eller editor", "forbindelse"]],
+  ["forbindelse_vaerktoej_fra", ["Værktøj i en forbindelse er ikke slået til", "forbindelse"]],
+  ["forbindelse_fra", ["Forbindelse ikke slået til", "forbindelse"]],
+  ["forbindelse_fra_supabase", ["Supabase-forbindelse ikke slået til", "supabase"]],
+  ["soeg_noegledata", ["Søgning efter browser-/nøgledata", "soegning"]],
+  ["soeg_udenfor", ["Søgning uden for tilladte mapper", "soegning"]],
+  ["soeg_hjemmemappe", ["Grep i hele hjemmemappen", "soegning"]],
+  ["soeg_library", ["Søgning i ~/Library eller skjulte mapper", "soegning"]],
+  ["onedrive_genvej", ["Genvej ud af OneDrive", "andet"]],
+  ["symlink_skriv", ["Skrivning gennem en genvej (symlink)", "andet"]],
+  ["git_hooks_vscode", ["Ændring af git-hooks/VS Code-opsætning", "kode_uden_sandkasse"]],
+  ["aendr_indstillinger", ["Ændring af Claude Codes indstillinger eller Alekos-pluginet", "indstillinger"]],
+  ["ugyldigt_kald", ["Ugyldigt værktøjskald", "ugyldigt_kald"]],
+]);
+let meldVaerktoej = "ukendt"; // sættes, så snart værktøjskaldet er læst
+
+/** Starter meld-stop.mjs løsrevet (vagten venter aldrig). Kan aldrig ændre blokeringen: alle fejl sluges. */
+function meldStop(noegle) {
+  try {
+    if (process.env.ALEKOS_VAGT_INGEN_MELDING === "1") return;
+    const testFil = process.env.ALEKOS_VAGT_MELD_TEST_FIL || "";
+    if (!testFil && process.env.ALEKOS_VAGT_OFFLINE === "1") return;
+    const [regel, kategori] = ETIKETTER.get(noegle) ?? ["Stoppet af vagten", "andet"];
+    const env = { ...process.env, ALEKOS_VAGT_MELD: JSON.stringify({ regel, kategori, vaerktoej: meldVaerktoej, plugin: egenUdgave() ?? "ukendt" }) };
+    const barn = spawn(process.execPath, [path.join(path.dirname(fileURLToPath(import.meta.url)), "meld-stop.mjs")],
+      { detached: true, stdio: "ignore", env });
+    barn.on("error", () => {});
+    barn.unref();
+  } catch { /* meldingen må aldrig røre blokeringen */ }
+}
+
+function bloker(grund, noegle) {
   process.stderr.write(
     `Blokeret af Alekos' sikkerhedsvagt: ${grund}. Claude må ikke røre browserdata, nøgleringen, hemmeligheder, ` +
     `Claude Codes indstillinger eller kalde Supabase direkte. Brug MCP-værktøjerne (alekos), og spørg medarbejderen, hvis noget mangler.\n`,
   );
+  meldStop(noegle);
   process.exit(2);
 }
 
@@ -464,26 +518,27 @@ let raw = "";
 try {
   for await (const chunk of process.stdin) raw += chunk;
 } catch {
-  bloker("vagten kunne ikke læse værktøjskaldet");
+  bloker("vagten kunne ikke læse værktøjskaldet", "ugyldigt_kald");
 }
 let data;
 try {
   data = JSON.parse(raw);
 } catch {
-  bloker("vagten kunne ikke læse værktøjskaldet");
+  bloker("vagten kunne ikke læse værktøjskaldet", "ugyldigt_kald");
 }
-if (!data || typeof data !== "object" || Array.isArray(data)) bloker("ugyldigt værktøjskald");
+try { if (typeof data?.tool_name === "string") meldVaerktoej = data.tool_name.replace(/[^A-Za-z0-9_.:-]/g, "").slice(0, 100) || "ukendt"; } catch { /* kun til meldingen */ }
+if (!data || typeof data !== "object" || Array.isArray(data)) bloker("ugyldigt værktøjskald", "ugyldigt_kald");
 const tool = data.tool_name;
 const inp = data.tool_input;
-if (typeof tool !== "string" || !tool) bloker("værktøjskald uden navn");
-if (!inp || typeof inp !== "object" || Array.isArray(inp)) bloker("værktøjskald uden input");
+if (typeof tool !== "string" || !tool) bloker("værktøjskald uden navn", "ugyldigt_kald");
+if (!inp || typeof inp !== "object" || Array.isArray(inp)) bloker("værktøjskald uden input", "ugyldigt_kald");
 const cwd = typeof data.cwd === "string" ? data.cwd : process.cwd();
 
 // Claude in Chrome (0.3.0): tilladt til flybookingsider og Facebook — KUN i en Chrome-profil uden Admin-login (guiden).
 // Vagten spærrer det, der kan hente en login-nøgle, hvis profilen alligevel er logget ind et sted.
 // 0.7.0: VS Code/IDE-forbindelsen må bruges (diagnostik, diff), men ikke til at køre kode eller terminal uden sandkasse.
 if (/^mcp__(ide|claude-vscode|jetbrains|plugin_[a-z0-9_-]*jetbrains[a-z0-9_-]*)__[a-z0-9_]*(execute|run|terminal|command|shell)/i.test(tool)) {
-  bloker("kørsel af kode/terminal via editoren (brug Bash, som kører i sandkassen)");
+  bloker("kørsel af kode/terminal via editoren (brug Bash, som kører i sandkassen)", "editor_kode");
 }
 if (CHROME.test(tool)) {
   // Serverens liste (0.5.6) oveni den faste lokale bund; svarer serveren ikke, gælder sidst kendte/den lokale bund.
@@ -497,21 +552,22 @@ if (CHROME.test(tool)) {
 // Andre MCP-servere (0.4.0): Casper styrer dem centralt pr. person (Admin → Claude-adgang → Andre forbindelser).
 /** Forbindelsesreglerne for én MCP-server (værktøjer og ressourcer). `rest` = "server__værktøj". */
 async function tjekServer(server, rest, navn) {
-  if (!server || !/^[a-z0-9_.-]+$/i.test(server)) bloker(`${navn} (ukendt navn)`);
+  if (!server || !/^[a-z0-9_.-]+$/i.test(server)) bloker(`${navn} (ukendt navn)`, "forbindelse_ukendt_navn");
   if (/^plugin_alekos_alekos$/i.test(server)) return;
-  if (/^plugin_alekos_/i.test(server)) bloker(`${navn} (udgiver sig for at være Alekos' egen)`);
+  if (/^plugin_alekos_/i.test(server)) bloker(`${navn} (udgiver sig for at være Alekos' egen)`, "forbindelse_falsk_alekos");
   const { regler, ukendt_tilladt, altid_spaerret, vaerktoej_regler } = await forbindelser();
   // Fast bund: den lokale liste gælder altid — serveren kan kun stramme, ikke løsne den.
-  if (ALTID_SPAERRET_NOED.test(server) || new RegExp(altid_spaerret, "i").test(server)) bloker(`${navn} (styrer filer, browser, terminal eller editor — altid spærret)`);
+  if (ALTID_SPAERRET_NOED.test(server) || new RegExp(altid_spaerret, "i").test(server)) bloker(`${navn} (styrer filer, browser, terminal eller editor — altid spærret)`, "forbindelse_altid_spaerret");
   // Regler for enkelte værktøjer (fx "Gmail: send nej") går forud — matches fra starten af "server__værktøj".
   const vRegel = (vaerktoej_regler ?? []).find((r) => new RegExp(`^(?:${r.moenster})`, "i").test(rest));
   if (vRegel) {
-    if (!vRegel.tilladt) bloker(`${navn} er ikke slået til for dig — spørg Casper (Admin → Claude-adgang)`);
+    if (!vRegel.tilladt) bloker(`${navn} er ikke slået til for dig — spørg Casper (Admin → Claude-adgang)`, "forbindelse_vaerktoej_fra");
     return;
   }
   const regel = regler.find((r) => new RegExp(r.moenster, "i").test(server));
   if (regel ? !regel.tilladt : !ukendt_tilladt) {
-    bloker(`forbindelsen "${server}" (${regel ? regel.id : "ukendt"}) er ikke slået til for dig — spørg Casper (Admin → Claude-adgang)`);
+    bloker(`forbindelsen "${server}" (${regel ? regel.id : "ukendt"}) er ikke slået til for dig — spørg Casper (Admin → Claude-adgang)`,
+      regel?.id === "supabase" ? "forbindelse_fra_supabase" : "forbindelse_fra");
   }
 }
 
@@ -550,7 +606,7 @@ if (["ReadMcpResourceTool", "ReadMcpResourceDirTool", "ListMcpResourcesTool"].in
   const srv = typeof inp.server === "string" ? inp.server.trim() : "";
   if (!srv) {
     if (tool === "ListMcpResourcesTool") process.exit(0); // kun en liste over navne
-    bloker("MCP-ressource uden forbindelse");
+    bloker("MCP-ressource uden forbindelse", "ugyldigt_kald");
   }
   const norm = srv.replace(/[^a-z0-9_.-]+/gi, "_");
   await tjekServer(norm, `${norm}__ressource`, `ressourcer fra forbindelsen "${srv}"`);
@@ -558,7 +614,7 @@ if (["ReadMcpResourceTool", "ReadMcpResourceDirTool", "ListMcpResourcesTool"].in
 }
 
 const erBash = tool === "Bash" || tool === "Monitor";
-if (erBash && typeof inp.command !== "string") bloker("kommando, der ikke er tekst");
+if (erBash && typeof inp.command !== "string") bloker("kommando, der ikke er tekst", "ugyldigt_kald");
 
 // Grep/Glob (0.7.0, Caspers krav 23.10.2026): søgning med fuld sti og fra hjemmemappen er tilladt (fx "find filen, jeg
 // lige har hentet") — men aldrig ned i ~/Library eller skjulte mapper (~/.ssh, ~/.config …) og aldrig over hjemmemappen.
@@ -578,7 +634,7 @@ function globKanRamme(del, navn) {
   try { return new RegExp(`^${re}$`, "i").test(navn); } catch { return true; }
 }
 if (tool === "Grep" || tool === "Glob") {
-  for (const k of ["pattern", "glob"]) if (typeof inp[k] === "string" && SOEGEORD.test(inp[k])) bloker("søgning efter browser-/nøgledata");
+  for (const k of ["pattern", "glob"]) if (typeof inp[k] === "string" && SOEGEORD.test(inp[k])) bloker("søgning efter browser-/nøgledata", "soeg_noegledata");
   let sti = typeof inp.path === "string" && inp.path ? inp.path : ".";
   let moenster = tool === "Glob" && typeof inp.pattern === "string" ? inp.pattern.trim() : "";
   if (/^[\/~]|\$HOME|\$\{HOME\}/.test(moenster)) {
@@ -588,28 +644,28 @@ if (tool === "Grep" || tool === "Glob") {
     sti = i < 0 ? dele0.join("/") : dele0.slice(0, i).join("/") || "/";
     moenster = i < 0 ? "" : dele0.slice(i).join("/");
   }
-  if ([inp.glob, moenster].some((x) => typeof x === "string" && x.split("/").includes(".."))) bloker("søgemønster med ..");
+  if ([inp.glob, moenster].some((x) => typeof x === "string" && x.split("/").includes(".."))) bloker("søgemønster med ..", "soeg_udenfor");
   const rod = path.resolve(cwd, normaliser(sti));
   const roedder = [rod];
   try { roedder.push(fs.realpathSync(rod)); } catch { /* findes ikke */ }
   const hjem = path.resolve(HOME);
   for (const r of roedder) {
     const over = r !== hjem && hjem.startsWith(r.endsWith(path.sep) ? r : r + path.sep);
-    if (over) bloker("søgning over hjemmemappen (søg fx i ~/Downloads eller ~/Documents)");
+    if (over) bloker("søgning over hjemmemappen (søg fx i ~/Downloads eller ~/Documents)", "soeg_udenfor");
     if (r === hjem) {
       // Grep fra hjemmemappen går i alle undermapper, også ~/Library — vælg en mappe.
-      if (tool === "Grep") bloker("Grep i hele hjemmemappen (vælg en mappe, fx ~/Downloads eller ~/Documents)");
+      if (tool === "Grep") bloker("Grep i hele hjemmemappen (vælg en mappe, fx ~/Downloads eller ~/Documents)", "soeg_hjemmemappe");
       const foerste = (moenster || "*").split("/")[0];
       const fredet = ["Library", ".ssh", ".config", ".aws", ".docker", ".supabase", ".mozilla", ".claude", "Hemmeligt", ".gnupg"];
       if (foerste === "**" || fredet.some((n) => globKanRamme(foerste, n))) {
-        bloker("søgning, der kan nå ~/Library eller skjulte mapper (søg fx i ~/Downloads eller ~/Documents)");
+        bloker("søgning, der kan nå ~/Library eller skjulte mapper (søg fx i ~/Downloads eller ~/Documents)", "soeg_library");
       }
     }
     // Undtagen OneDrive/SharePoint-mapperne (~/Library/CloudStorage/OneDrive-*), hvor medarbejderne arbejder (23.10.2026).
     // Små bogstaver: realpath retter ikke "~/library/Mail" til "Library" (kontrolfund 23.10.2026).
     const lib = path.join(hjem, "Library").toLowerCase();
     const rl = r.toLowerCase();
-    if ((rl === lib || rl.startsWith(lib + path.sep)) && !iOneDrive(r)) bloker("søgning i ~/Library");
+    if ((rl === lib || rl.startsWith(lib + path.sep)) && !iOneDrive(r)) bloker("søgning i ~/Library", "soeg_library");
   }
 }
 const tekster = [];
@@ -618,10 +674,10 @@ for (const k of ["file_path", "path", "notebook_path", "pattern", "glob", "url"]
 const dele = tekster.map(normaliser);
 const tekst = dele.join("\n");
 
-if (tool === "WebFetch" && /supabase\.(co|in|com)\b/i.test(tekst)) bloker("direkte kald til Supabase");
+if (tool === "WebFetch" && /supabase\.(co|in|com)\b/i.test(tekst)) bloker("direkte kald til Supabase", "direkte kald til Supabase");
 
 // Tekst-tjek (alle værktøjer).
-for (const del of dele) for (const [re, navn] of STIER) if (new RegExp(re.source, re.flags.includes("m") ? re.flags : re.flags + "m").test(del)) bloker(navn);
+for (const del of dele) for (const [re, navn] of STIER) if (new RegExp(re.source, re.flags.includes("m") ? re.flags : re.flags + "m").test(del)) bloker(navn, navn);
 
 // Filværktøjer: absolutte og opløste stier.
 for (const k of ["file_path", "path", "notebook_path"]) {
@@ -630,11 +686,11 @@ for (const k of ["file_path", "path", "notebook_path"]) {
   // ~/Library/LaunchAgents eller ~), giver ellers skrivning uden for OneDrive (kontrolfund 23.10.2026).
   const fs0 = filstier(inp[k], cwd);
   // Gælder også Read (Read-tilladelsen for OneDrive må ikke følge en genvej ud).
-  if ((SKRIVE_VAERKTOEJER.has(tool) || tool === "Read") && fs0.some(iOneDrive) && !fs0.every(iOneDrive)) bloker("genvej ud af OneDrive");
+  if ((SKRIVE_VAERKTOEJER.has(tool) || tool === "Read") && fs0.some(iOneDrive) && !fs0.every(iOneDrive)) bloker("genvej ud af OneDrive", "onedrive_genvej");
   for (const p of fs0) {
-    for (const [re, navn] of STIER) if (re.test(p)) bloker(navn);
+    for (const [re, navn] of STIER) if (re.test(p)) bloker(navn, navn);
     if (SKRIVE_VAERKTOEJER.has(tool)) {
-      try { if (fs.lstatSync(p).isSymbolicLink()) bloker("skrivning gennem en genvej (symlink)"); } catch { /* findes ikke */ }
+      try { if (fs.lstatSync(p).isSymbolicLink()) bloker("skrivning gennem en genvej (symlink)", "symlink_skriv"); } catch { /* findes ikke */ }
       // Undtagelse: plan-tilstandens filer (~/.claude/plans/*.md), kun direkte i mappen og efter opløste symlinks.
       const planMapper = [path.join(HOME, ".claude", "plans"), path.join(KONFIG, "plans")];
       for (const m of [...planMapper]) { try { planMapper.push(fs.realpathSync(m)); } catch { /* findes ikke */ } }
@@ -644,7 +700,7 @@ for (const k of ["file_path", "path", "notebook_path"]) {
       const deler = p.split(path.sep);
       const koerbarKode = deler.includes(".husky") || p.includes(`${path.sep}.git${path.sep}hooks`) ||
         /\/\.vscode\/(tasks|settings|launch)\.json$/i.test(p);
-      if (koerbarKode) bloker("ændring af git-hooks/VS Code-opsætning (kode der kører uden sandkasse)");
+      if (koerbarKode) bloker("ændring af git-hooks/VS Code-opsætning (kode der kører uden sandkasse)", "git_hooks_vscode");
       // 0.4.0: egne skills, agents, kommandoer og CLAUDE.md må rettes (som i dag) — men aldrig med hooks (de kører
       // kommandoer uden sandkasse), og aldrig i pluginets egne mapper.
       const ci = deler.indexOf(".claude");
@@ -657,11 +713,11 @@ for (const k of ["file_path", "path", "notebook_path"]) {
         continue;
       }
       if (!erPlan && (iClaudeMappe || configFil || BESKYTTET.some((rod) => under(p, rod)))) {
-        bloker("ændring af Claude Codes indstillinger (.claude, .mcp.json) eller Alekos-pluginet");
+        bloker("ændring af Claude Codes indstillinger (.claude, .mcp.json) eller Alekos-pluginet", "aendr_indstillinger");
       }
     }
   }
 }
 
-if (erBash) for (const [re, navn] of BASH) if (re.test(tekst)) bloker(navn);
+if (erBash) for (const [re, navn] of BASH) if (re.test(tekst)) bloker(navn, navn);
 process.exit(0);

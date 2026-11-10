@@ -373,6 +373,75 @@ VK="$S/vkopi"; mkdir -p "$VK/hooks" "$VK/.claude-plugin"; cp "$(dirname "$V")"/*
 o="$(printf '%s' "$(j mcp__plugin_alekos_alekos__ret_fagviden "$RF")" | HOME="$S" CLAUDE_CONFIG_DIR= ALEKOS_VAGT_OFFLINE=1 node "$VK/hooks/vagt.mjs" 2>/dev/null)"
 printf '%s' "$o" | python3 -c "import json,sys;h=json.load(sys.stdin)['hookSpecificOutput'];sys.exit(0 if h['permissionDecision']=='ask' and 'updatedInput' not in h else 1)" && pass=$((pass+1)) || { fail=$((fail+1)); echo "FEJL updatedInput uden udgave: $o"; }
 
+# 0.8.2: hvert stop meldes til serveren — kun fast etiket + kategori + værktøj + udgave, aldrig værtsnavn/adresse/kommando.
+# Testvejen ALEKOS_VAGT_MELD_TEST_FIL: barnet skriver den body, det ville sende, til filen (ingen nøgle, intet netværk).
+MF="$S/meld.json"; ME="$S/meld.err"
+vent(){ for _ in $(seq 1 40); do [ -s "$MF" ] && return 0; sleep 0.1; done; return 1; }
+# meld <json-kald> <exit> <regel> <kategori> <værktøj> [forbudte ord i hele body ...]
+meld(){ rm -f "$MF"; local k="$1" x="$2" rg="$3" kt="$4" vt="$5"; shift 5
+  printf '%s' "$k" | HOME="$S" CLAUDE_CONFIG_DIR= ALEKOS_VAGT_OFFLINE=1 ALEKOS_VAGT_TEST_CHROME="${TC:-[]}" ALEKOS_VAGT_MELD_TEST_FIL="$MF" node "$V" >/dev/null 2>"$ME"; r=$?
+  if [ $r = "$x" ] && vent && python3 -c 'import json,sys
+b=json.load(open(sys.argv[1])); p=b["params"]
+ok=b["jsonrpc"]=="2.0" and b["method"]=="alekos/vagt_stop" and set(b)=={"jsonrpc","id","method","params"} and set(p)=={"regel","kategori","vaerktoej","plugin"}
+ok=ok and p["regel"]==sys.argv[2] and p["kategori"]==sys.argv[3] and p["vaerktoej"]==sys.argv[4] and p["plugin"]==sys.argv[5] and len(p["regel"])<=120
+raw=open(sys.argv[1]).read().lower()
+ok=ok and not any(f.lower() in raw for f in sys.argv[6:])
+sys.exit(0 if ok else 1)' "$MF" "$rg" "$kt" "$vt" "$VV" "$@"; then pass=$((pass+1)); else fail=$((fail+1)); echo "FEJL melding (exit $r): $k → $(cat "$MF" 2>/dev/null)"; fi; }
+ingen(){ rm -f "$MF"; printf '%s' "$1" | HOME="$S" CLAUDE_CONFIG_DIR= ALEKOS_VAGT_OFFLINE=1 env ${3:-} ALEKOS_VAGT_MELD_TEST_FIL="$MF" node "$V" >/dev/null 2>&1; r=$?
+  sleep 1.5; if [ $r = "$2" ] && [ ! -e "$MF" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FEJL: melding sendt, hvor der ikke må (exit $r): $1"; fi; }
+nav(){ python3 -c 'import json,sys;print(json.dumps({"url":sys.argv[1],"tabId":1}))' "$1"; }
+bj(){ j Bash "$(python3 -c 'import json,sys;print(json.dumps({"command":sys.argv[1]}))' "$1")"; }
+# (a) dynamisk tekst → fast etiket + rigtig kategori, aldrig værtsnavn/adresse/servernavn/kommando
+TC='[{"domaene":"hemmelig-bank.dk","hvad":"Banken"}]' meld "$(j mcp__claude-in-chrome__navigate "$(nav https://login.hemmelig-bank.dk/konto?id=42)")" 2 \
+  "Spærret side i browseren" browser mcp__claude-in-chrome__navigate hemmelig-bank login.hemmelig konto banken
+meld "$(j mcp__claude-in-chrome__navigate "$(nav file:///Users/x/hemmelig-mappe/a.pdf)")" 2 \
+  "Adresse, der ikke er en almindelig webside, i browseren" browser mcp__claude-in-chrome__navigate hemmelig-mappe file: a.pdf
+meld "$(j mcp__claude-in-chrome__navigate "$(nav https://admin.alekos.dk/trips/abc123)")" 2 "Admin i browseren er ikke slået til" browser mcp__claude-in-chrome__navigate abc123 trips
+meld "$(j mcp__claude-in-chrome__navigate "$(nav https://projektx.supabase.co/rest)")" 2 "Supabase i browseren" browser mcp__claude-in-chrome__navigate projektx rest
+meld "$(j mcp__claude-in-chrome__hemmeligt_nyt '{}')" 2 "Ukendt Chrome-værktøj" browser mcp__claude-in-chrome__hemmeligt_nyt '"Ukendt Chrome-værktøj \"'
+meld "$(j mcp__claude_ai_Dinero__list_invoices '{"q":"faktura 4711"}')" 2 "Forbindelse ikke slået til" forbindelse mcp__claude_ai_Dinero__list_invoices 4711 '"regel": "forbindelsen'
+meld "$(j mcp__supabase__execute_sql '{"query":"select * from kunder"}')" 2 "Supabase-forbindelse ikke slået til" supabase mcp__supabase__execute_sql kunder select
+meld "$(j mcp__desktop-commander__start_process '{"command":"rm -rf x"}')" 2 "Forbindelse, der styrer filer, browser, terminal eller editor" forbindelse mcp__desktop-commander__start_process "rm -rf"
+meld "$(j 'mcp__x y__z' '{}')" 2 "Forbindelse med ukendt navn" forbindelse mcp__xy__z "x y"
+meld "$(bj 'curl -H "apikey: hemmeligt123" https://projekty.supabase.co/rest/v1/kunder')" 2 "direkte kald til Supabase" supabase Bash hemmeligt123 projekty curl kunder
+meld "$(j WebFetch '{"url":"https://projektz.supabase.co/x","prompt":"vis kunder"}')" 2 "direkte kald til Supabase" supabase WebFetch projektz "vis kunder"
+meld "$(j Grep '{"pattern":"kodeord","path":"~/Library/Mail"}')" 2 "Søgning i ~/Library eller skjulte mapper" soegning Grep kodeord /mail
+meld 'ikke json {{{' 2 "Ugyldigt værktøjskald" ugyldigt_kald ukendt "ikke json"
+# (b) STIER/BASH-stop sender listens egen etiket
+meld "$(j Read '{"file_path":"~/.ssh/id_ed25519"}')" 2 "~/.ssh" noegle_data Read id_ed25519
+meld "$(bj 'osascript -e "tell app \"Mail\" to send"')" 2 "osascript (kan styre alle programmer uden sandkasse)" kode_uden_sandkasse Bash '"tell app'
+meld "$(bj 'security find-generic-password -s alekos-mcp -w')" 2 "nøgleringen (security)" noegle_data Bash alekos-mcp find-generic
+WS="$(python3 -c 'import json,sys;print(json.dumps({"file_path":sys.argv[1],"content":"x"}))' "$S/.claude/settings.json")"
+meld "$(j Write "$WS")" 2 "Ændring af Claude Codes indstillinger eller Alekos-pluginet" indstillinger Write settings.json
+# (c) tilladte kald (også "ask") sender intet; ALEKOS_VAGT_INGEN_MELDING=1 stopper meldingen helt
+ingen "$(bj 'git status')" 0; ingen "$(j mcp__claude_ai_Gmail__search_threads '{}')" 0; ingen "$(j mcp__plugin_alekos_alekos__gem_forslag '{}')" 0
+ingen "$(j mcp__claude-in-chrome__navigate "$(nav https://www.alekos.dk)")" 0
+ingen "$(bj 'osascript -e x')" 2 "ALEKOS_VAGT_INGEN_MELDING=1"
+# (d) exit-kode og stderr er de samme med og uden melding
+for k in "$(bj 'osascript -e x')" "$(j mcp__claude_ai_Dinero__x '{}')" "$(j mcp__claude-in-chrome__navigate "$(nav https://admin.alekos.dk/x)")"; do
+  e1="$(printf '%s' "$k" | HOME="$S" CLAUDE_CONFIG_DIR= ALEKOS_VAGT_OFFLINE=1 ALEKOS_VAGT_MELD_TEST_FIL="$MF" node "$V" 2>&1 >/dev/null; echo "exit $?")"
+  e2="$(printf '%s' "$k" | HOME="$S" CLAUDE_CONFIG_DIR= ALEKOS_VAGT_OFFLINE=1 ALEKOS_VAGT_INGEN_MELDING=1 node "$V" 2>&1 >/dev/null; echo "exit $?")"
+  if [ "$e1" = "$e2" ] && [[ "$e1" == "Blokeret af Alekos' sikkerhedsvagt: "*$'\n'"exit 2" ]]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FEJL stderr/exit ændret: [$e1] vs [$e2]"; fi
+done
+# Barnet: fast metode/felter, ukendt kategori → andet, lang regel skæres, aldrig udskrift; et ødelagt barn ændrer intet
+MS="$(dirname "$V")/meld-stop.mjs"
+o="$(ALEKOS_VAGT_MELD='{"regel":"'"$(printf 'x%.0s' $(seq 1 300))"'","kategori":"hack","vaerktoej":"a b;c","plugin":"1","ekstra":"hemmeligt","method":"x"}' ALEKOS_VAGT_MELD_TEST_FIL="$MF" node "$MS" 2>&1)"
+python3 -c 'import json,sys;b=json.load(open(sys.argv[1]));p=b["params"];sys.exit(0 if not sys.argv[2] and b["method"]=="alekos/vagt_stop" and len(p["regel"])==120 and p["kategori"]=="andet" and p["vaerktoej"]=="abc" and p["plugin"]=="ukendt" and set(p)=={"regel","kategori","vaerktoej","plugin"} and "hemmeligt" not in open(sys.argv[1]).read() else 1)' "$MF" "$o" \
+  && pass=$((pass+1)) || { fail=$((fail+1)); echo "FEJL meld-stop rensning: $(cat "$MF")"; }
+o="$(ALEKOS_VAGT_MELD='ikke json' node "$MS" 2>&1; echo "exit $?")"; [ "$o" = "exit 0" ] && pass=$((pass+1)) || { fail=$((fail+1)); echo "FEJL meld-stop ved ugyldig data: $o"; }
+grep -q 'console\.\|process\.std\(out\|err\)' "$MS" && { fail=$((fail+1)); echo "FEJL: meld-stop.mjs må aldrig skrive noget ud"; } || pass=$((pass+1))
+MK="$S/mkopi"; cp -R "$(dirname "$V")/.." "$MK"; printf 'throw new Error("x")\n' > "$MK/hooks/meld-stop.mjs"
+e="$(printf '%s' "$(bj 'osascript -e x')" | HOME="$S" CLAUDE_CONFIG_DIR= ALEKOS_VAGT_OFFLINE=1 ALEKOS_VAGT_MELD_TEST_FIL="$MF" node "$MK/hooks/vagt.mjs" 2>/dev/null; echo $?)"
+[ "$e" = 2 ] && pass=$((pass+1)) || { fail=$((fail+1)); echo "FEJL: ødelagt meld-stop.mjs ændrede blokeringen ($e)"; }
+# Alle faste etiketter: højst 120 tegn og en kendt kategori
+python3 - "$V" <<'PY' && pass=$((pass+1)) || { fail=$((fail+1)); echo "FEJL: etiket for lang eller ukendt kategori"; }
+import re,sys
+s=open(sys.argv[1]).read(); K={"browser","noegle_data","supabase","indstillinger","forbindelse","soegning","kode_uden_sandkasse","ugyldigt_kald","andet"}
+par=re.findall(r'^  \[/.*/[a-z]*, "([^"\n]+)", "([a-z_]+)"\],$', s, re.M)+re.findall(r'\["[a-z_]+", \["([^"\n]+)", "([a-z_]+)"\]\]', s)
+assert len(par)>40, len(par)
+sys.exit(0 if all(len(e)<=120 and k in K for e,k in par) else 1)
+PY
+
 rm -rf "$S"
 # 0.7.1: /claude-forbind og /claude-adgang i al Chrome-tekst og JS (også pushState/links); almindelig tekst er fri
 HA='["*"]'

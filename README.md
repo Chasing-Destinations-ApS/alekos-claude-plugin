@@ -124,6 +124,11 @@ sammen med den gamle adresse (repo-navnet må ikke ændres). `gem_forslag`, `del
 servernavn. Ved `ret_fagviden` lægger vagten udgaven i argumentet `_alekos_plugin` (hookens `updatedInput` sammen med
 "ask"); serveren kræver ≥ 0.8.0. headersHelper er uændret (sender `{}` uden nødnøgle, så browserloginet bruges).
 
+**Stop meldes (0.8.2):** hvert stop fra vagten sendes til serveren (`alekos/vagt_stop`) fra en løsrevet proces
+(`plugins/alekos/hooks/meld-stop.mjs`), så vagten aldrig venter. Kun en fast etiket fra koden, en kategori, værktøjsnavnet
+og udgaven — aldrig adresser, kommandoer eller samtaletekst. Serveren afgør, om det gemmes. Slå fra lokalt med
+`ALEKOS_VAGT_INGEN_MELDING=1`.
+
 **Nødveje:** `node plugins/alekos/scripts/login.mjs` (login i Terminal, hvis browserloginet ikke virker) og
 `node opsaetning/sikkerhed.mjs` (sætter reglerne efter et "ja").
 
