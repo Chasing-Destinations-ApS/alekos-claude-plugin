@@ -413,14 +413,13 @@ meld "$(bj 'osascript -e "tell app \"Mail\" to send"')" 2 "osascript (kan styre 
 meld "$(bj 'security find-generic-password -s alekos-mcp -w')" 2 "nøgleringen (security)" noegle_data Bash alekos-mcp find-generic
 WS="$(python3 -c 'import json,sys;print(json.dumps({"file_path":sys.argv[1],"content":"x"}))' "$S/.claude/settings.json")"
 meld "$(j Write "$WS")" 2 "Ændring af Claude Codes indstillinger eller Alekos-pluginet" indstillinger Write settings.json
-# (c) tilladte kald (også "ask") sender intet; ALEKOS_VAGT_INGEN_MELDING=1 stopper meldingen helt
+# (c) tilladte kald (også "ask") sender intet. (Ingen frakoblings-variabel: kontrolfund 10.11.2026.)
 ingen "$(bj 'git status')" 0; ingen "$(j mcp__claude_ai_Gmail__search_threads '{}')" 0; ingen "$(j mcp__plugin_alekos_alekos__gem_forslag '{}')" 0
 ingen "$(j mcp__claude-in-chrome__navigate "$(nav https://www.alekos.dk)")" 0
-ingen "$(bj 'osascript -e x')" 2 "ALEKOS_VAGT_INGEN_MELDING=1"
 # (d) exit-kode og stderr er de samme med og uden melding
 for k in "$(bj 'osascript -e x')" "$(j mcp__claude_ai_Dinero__x '{}')" "$(j mcp__claude-in-chrome__navigate "$(nav https://admin.alekos.dk/x)")"; do
   e1="$(printf '%s' "$k" | HOME="$S" CLAUDE_CONFIG_DIR= ALEKOS_VAGT_OFFLINE=1 ALEKOS_VAGT_MELD_TEST_FIL="$MF" node "$V" 2>&1 >/dev/null; echo "exit $?")"
-  e2="$(printf '%s' "$k" | HOME="$S" CLAUDE_CONFIG_DIR= ALEKOS_VAGT_OFFLINE=1 ALEKOS_VAGT_INGEN_MELDING=1 node "$V" 2>&1 >/dev/null; echo "exit $?")"
+  e2="$(printf '%s' "$k" | HOME="$S" CLAUDE_CONFIG_DIR= ALEKOS_VAGT_OFFLINE=1 node "$V" 2>&1 >/dev/null; echo "exit $?")"
   if [ "$e1" = "$e2" ] && [[ "$e1" == "Blokeret af Alekos' sikkerhedsvagt: "*$'\n'"exit 2" ]]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FEJL stderr/exit ændret: [$e1] vs [$e2]"; fi
 done
 # Barnet: fast metode/felter, ukendt kategori → andet, lang regel skæres, aldrig udskrift; et ødelagt barn ændrer intet

@@ -25,7 +25,7 @@ try {
   const testFil = process.env.ALEKOS_VAGT_MELD_TEST_FIL;
   if (testFil) {
     fs.writeFileSync(testFil, body, { mode: 0o600 });
-  } else if (process.env.ALEKOS_VAGT_OFFLINE !== "1" && process.env.ALEKOS_VAGT_INGEN_MELDING !== "1") {
+  } else if (process.env.ALEKOS_VAGT_OFFLINE !== "1") {
     const faelles = await import("../scripts/faelles.mjs");
     let key = null;
     try { key = faelles.hentNoegle(); } catch { key = null; }

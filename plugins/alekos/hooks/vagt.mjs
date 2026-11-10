@@ -452,7 +452,6 @@ let meldVaerktoej = "ukendt"; // sættes, så snart værktøjskaldet er læst
 /** Starter meld-stop.mjs løsrevet (vagten venter aldrig). Kan aldrig ændre blokeringen: alle fejl sluges. */
 function meldStop(noegle) {
   try {
-    if (process.env.ALEKOS_VAGT_INGEN_MELDING === "1") return;
     const testFil = process.env.ALEKOS_VAGT_MELD_TEST_FIL || "";
     if (!testFil && process.env.ALEKOS_VAGT_OFFLINE === "1") return;
     const [regel, kategori] = ETIKETTER.get(noegle) ?? ["Stoppet af vagten", "andet"];
